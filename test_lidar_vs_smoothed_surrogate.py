@@ -12,6 +12,14 @@ Bộ 3 Bài Test:
 3. TEST 3: Kháng Rung lắc Vector Dẫn đường (Guidance Field Lipschitz Stability)
 """
 
+try:
+    import compat_patch
+except ImportError:
+    try:
+        from fkd_diffusers import compat_patch
+    except Exception:
+        pass
+
 import os
 import json
 import argparse
@@ -25,8 +33,6 @@ import torch
 import torch.nn.functional as F
 from diffusers import AutoencoderKL, DDIMScheduler, DPMSolverMultistepScheduler, StableDiffusionPipeline
 import ImageReward as RM
-
-import compat_patch  # Đảm bảo môi trường tương thích mượt mà
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"🚀 Thiết bị thực thi bài test: {device}")
