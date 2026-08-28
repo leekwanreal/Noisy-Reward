@@ -65,9 +65,24 @@ def apply_compat_patches():
             setattr(mod, "prune_linear_layer", prune_linear_layer)
 
     # 3. Tokenizer backwards-compatibility for BertTokenizer in BLIP/ImageReward
-    def _get_additional_special_tokens_ids(self):
-        return self.convert_tokens_to_ids(self.additional_special_tokens)
-    
-    transformers.tokenization_utils_base.PreTrainedTokenizerBase.additional_special_tokens_ids = property(_get_additional_special_tokens_ids)
+    _orig_add_special_tokens = transformers.tokenization_utils_base.PreTrainedTokenizerBase.add_special_tokens
+
+    def _patched_add_special_tokens(self, special_tokens_dict, replace_additional_special_tokens=True):
+        res = _orig_add_special_tokens(self, special_tokens_dict, replace_additional_special_tokens=replace_additional_special_tokens)
+        try:
+            ids = self.convert_tokens_to_ids(self.additional_special_tokens)
+            self.__dict__["additional_special_tokens_ids"] = ids
+        except Exception:
+            pass
+        return res
+
+    transformers.tokenization_utils_base.PreTrainedTokenizerBase.add_special_tokens = _patched_add_special_tokens
+
+    try:
+        from transformers import BertTokenizer, BertTokenizerFast
+        BertTokenizer.add_special_tokens = _patched_add_special_tokens
+        BertTokenizerFast.add_special_tokens = _patched_add_special_tokens
+    except Exception:
+        pass
 
 apply_compat_patches()
