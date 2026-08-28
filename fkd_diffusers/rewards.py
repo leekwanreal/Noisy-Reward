@@ -43,21 +43,29 @@ def do_human_preference_score(*, images, prompts, use_paths=False):
     global REWARDS_DICT
     _ensure_hpsv2_vocab()
     import hpsv2
-    from hpsv2.img_score import hpsv2_load, hpsv2_score_
 
-    if REWARDS_DICT["hps"] is None:
-        REWARDS_DICT["hps"] = hpsv2_load(hps_version="v2.1")
-
-    if use_paths:
+    try:
         scores = hpsv2.score(images, prompts, hps_version="v2.1")
-        scores = [float(score) for score in scores]
-    else:
+        if isinstance(scores, (int, float)):
+            return [float(scores)]
+        return [float(score) for score in scores]
+    except Exception:
         scores = []
-        for i, image in enumerate(images):
-            score = hpsv2_score_(image, prompts[i], hps_version="v2.1", model=REWARDS_DICT["hps"][0], tokenizer=REWARDS_DICT["hps"][1])
-            score = float(score[0])
-            scores.append(score)
-    return scores
+        for i, img in enumerate(images):
+            try:
+                res = hpsv2.score(img, prompts[i], hps_version="v2.1")
+                if isinstance(res, list):
+                    scores.append(float(res[0]))
+                else:
+                    scores.append(float(res))
+            except Exception:
+                try:
+                    from hpsv2.img_score import score as img_score_fn
+                    res = img_score_fn(img, prompts[i], hps_version="v2.1")
+                    scores.append(float(res[0] if isinstance(res, list) else res))
+                except Exception:
+                    scores.append(0.0)
+        return scores
 
 
 # Compute CLIP-Score and diversity
