@@ -2,11 +2,18 @@ import sys
 import types
 import torch
 import torch.nn as nn
+import transformers
 import transformers.modeling_utils
 import transformers.pytorch_utils
 import transformers.tokenization_utils_base
 
 def apply_compat_patches():
+    # 0. Transformers Cache stub classes for peft compatibility across all transformers versions
+    for cache_cls in ["EncoderDecoderCache", "DynamicCache", "Cache", "StaticCache", "SlidingWindowCache", "QuantizedCacheConfig", "HybridCache"]:
+        if not hasattr(transformers, cache_cls):
+            dummy = type(cache_cls, (object,), {})
+            setattr(transformers, cache_cls, dummy)
+
     # 1. Mock wandb to prevent broken wandb.proto protobuf errors on ImageReward.ReFL import
     if "wandb" not in sys.modules:
         try:

@@ -1,3 +1,7 @@
+import sys
+sys.path.append("fkd_diffusers")
+import compat_patch
+
 # primary generation script
 import os
 import json
@@ -15,11 +19,6 @@ import torch
 from diffusers import DDIMScheduler, UNet2DConditionModel, DPMSolverMultistepScheduler, StableDiffusionPipeline, StableDiffusionXLPipeline, DiffusionPipeline, LCMScheduler, AutoPipelineForText2Image, EulerDiscreteScheduler, FluxPipeline
 from huggingface_hub import hf_hub_download
 from safetensors.torch import load_file
-
-
-import sys
-sys.path.append("fkd_diffusers")
-import compat_patch
 
 from fks_utils import do_eval
 
