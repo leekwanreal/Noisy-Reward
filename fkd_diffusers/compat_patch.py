@@ -70,9 +70,13 @@ def apply_compat_patches():
     def _patched_add_special_tokens(self, *args, **kwargs):
         res = _orig_add_special_tokens(self, *args, **kwargs)
         try:
-            self.__dict__["additional_special_tokens_ids"] = self.convert_tokens_to_ids(self.additional_special_tokens)
+            enc_id = self.convert_tokens_to_ids("[ENC]")
+            if enc_id is not None and enc_id != getattr(self, "unk_token_id", -1):
+                self.__dict__["additional_special_tokens_ids"] = [enc_id]
+            else:
+                self.__dict__["additional_special_tokens_ids"] = [30522]
         except Exception:
-            pass
+            self.__dict__["additional_special_tokens_ids"] = [30522]
         return res
 
     transformers.tokenization_utils_base.PreTrainedTokenizerBase.add_special_tokens = _patched_add_special_tokens
@@ -80,14 +84,52 @@ def apply_compat_patches():
     _orig_getattr = getattr(transformers.tokenization_utils_base.PreTrainedTokenizerBase, "__getattr__", None)
     def _patched_getattr(self, key):
         if key == "additional_special_tokens_ids":
-            try:
-                return self.convert_tokens_to_ids(self.additional_special_tokens)
-            except Exception:
-                return []
+            ids = []
+            if hasattr(self, "additional_special_tokens") and self.additional_special_tokens:
+                try:
+                    res = self.convert_tokens_to_ids(self.additional_special_tokens)
+                    if isinstance(res, list) and res:
+                        ids = res
+                    elif isinstance(res, int) and res != getattr(self, "unk_token_id", -1):
+                        ids = [res]
+                except Exception:
+                    pass
+            if not ids:
+                try:
+                    enc_id = self.convert_tokens_to_ids("[ENC]")
+                    if enc_id is not None and enc_id != getattr(self, "unk_token_id", -1):
+                        ids = [enc_id]
+                except Exception:
+                    pass
+            if not ids:
+                ids = [30522]
+            return ids
         if _orig_getattr is not None:
             return _orig_getattr(self, key)
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
 
     transformers.tokenization_utils_base.PreTrainedTokenizerBase.__getattr__ = _patched_getattr
+
+    # 4. Direct patch to ImageReward BLIP init_tokenizer function
+    try:
+        import ImageReward.models.BLIP.blip as blip_mod
+        import ImageReward.models.BLIP.blip_pretrain as blip_pretrain_mod
+        from transformers import BertTokenizer
+
+        def safe_init_tokenizer():
+            tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+            tokenizer.add_special_tokens({'bos_token':'[DEC]'})
+            tokenizer.add_special_tokens({'additional_special_tokens':['[ENC]']})
+            enc_id = tokenizer.convert_tokens_to_ids('[ENC]')
+            if enc_id is None or enc_id == tokenizer.unk_token_id:
+                enc_id = 30522
+            tokenizer.enc_token_id = enc_id
+            tokenizer.additional_special_tokens_ids = [enc_id]
+            return tokenizer
+
+        blip_mod.init_tokenizer = safe_init_tokenizer
+        blip_pretrain_mod.init_tokenizer = safe_init_tokenizer
+    except Exception:
+        pass
 
 apply_compat_patches()
