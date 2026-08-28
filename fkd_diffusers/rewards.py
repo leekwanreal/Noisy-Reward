@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import clip
-import hpsv2
-from hpsv2.img_score import hpsv2_load, hpsv2_score_
+import os
+import urllib.request
 from image_reward_utils import rm_load
 
 # Stores the reward models
@@ -14,6 +14,17 @@ REWARDS_DICT = {
     "hps": None
 }
 
+def _ensure_hpsv2_vocab():
+    try:
+        import hpsv2
+        hpsv2_dir = os.path.dirname(hpsv2.__file__)
+        target_path = os.path.join(hpsv2_dir, "src", "open_clip", "bpe_simple_vocab_16e6.txt.gz")
+        if not os.path.exists(target_path):
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            url = "https://github.com/openai/CLIP/raw/main/clip/bpe_simple_vocab_16e6.txt.gz"
+            urllib.request.urlretrieve(url, target_path)
+    except Exception as e:
+        print(f"Warning: could not auto-download hpsv2 vocab: {e}")
 
 # Returns the reward function based on the guidance_reward_fn name
 def get_reward_function(reward_name, images, prompts, metric_to_chase="overall_score", diff=False):
@@ -23,7 +34,6 @@ def get_reward_function(reward_name, images, prompts, metric_to_chase="overall_s
         return do_clip_score(images=images, prompts=prompts)
     elif reward_name == "HumanPreference":
         return do_human_preference_score(images=images, prompts=prompts)
-
     else:
         raise ValueError(f"Unknown metric: {reward_name}")
 
@@ -31,6 +41,10 @@ def get_reward_function(reward_name, images, prompts, metric_to_chase="overall_s
 # Compute human preference score
 def do_human_preference_score(*, images, prompts, use_paths=False):
     global REWARDS_DICT
+    _ensure_hpsv2_vocab()
+    import hpsv2
+    from hpsv2.img_score import hpsv2_load, hpsv2_score_
+
     if REWARDS_DICT["hps"] is None:
         REWARDS_DICT["hps"] = hpsv2_load(hps_version="v2.1")
 
@@ -40,7 +54,7 @@ def do_human_preference_score(*, images, prompts, use_paths=False):
     else:
         scores = []
         for i, image in enumerate(images):
-            score = hpsv2_score_(image, prompts[i], hps_version="v2.1", model=REWARDS_DICT["hps"][0],tokenizer=REWARDS_DICT["hps"][1])
+            score = hpsv2_score_(image, prompts[i], hps_version="v2.1", model=REWARDS_DICT["hps"][0], tokenizer=REWARDS_DICT["hps"][1])
             score = float(score[0])
             scores.append(score)
     return scores
