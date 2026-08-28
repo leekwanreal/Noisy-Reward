@@ -67,22 +67,27 @@ def apply_compat_patches():
     # 3. Tokenizer backwards-compatibility for BertTokenizer in BLIP/ImageReward
     _orig_add_special_tokens = transformers.tokenization_utils_base.PreTrainedTokenizerBase.add_special_tokens
 
-    def _patched_add_special_tokens(self, special_tokens_dict, replace_additional_special_tokens=True):
-        res = _orig_add_special_tokens(self, special_tokens_dict, replace_additional_special_tokens=replace_additional_special_tokens)
+    def _patched_add_special_tokens(self, *args, **kwargs):
+        res = _orig_add_special_tokens(self, *args, **kwargs)
         try:
-            ids = self.convert_tokens_to_ids(self.additional_special_tokens)
-            self.__dict__["additional_special_tokens_ids"] = ids
+            self.__dict__["additional_special_tokens_ids"] = self.convert_tokens_to_ids(self.additional_special_tokens)
         except Exception:
             pass
         return res
 
     transformers.tokenization_utils_base.PreTrainedTokenizerBase.add_special_tokens = _patched_add_special_tokens
 
-    try:
-        from transformers import BertTokenizer, BertTokenizerFast
-        BertTokenizer.add_special_tokens = _patched_add_special_tokens
-        BertTokenizerFast.add_special_tokens = _patched_add_special_tokens
-    except Exception:
-        pass
+    _orig_getattr = getattr(transformers.tokenization_utils_base.PreTrainedTokenizerBase, "__getattr__", None)
+    def _patched_getattr(self, key):
+        if key == "additional_special_tokens_ids":
+            try:
+                return self.convert_tokens_to_ids(self.additional_special_tokens)
+            except Exception:
+                return []
+        if _orig_getattr is not None:
+            return _orig_getattr(self, key)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
+
+    transformers.tokenization_utils_base.PreTrainedTokenizerBase.__getattr__ = _patched_getattr
 
 apply_compat_patches()
