@@ -100,17 +100,7 @@ def main(args):
     prefix = f"{args.num_inference_steps}_{args.eta}_{args.num_particles}_{args.top_k}_{args.resample_t_end}_{args.lmbda}_{args.scale}_{args.seed}"
     output_dir = os.path.join(args.output_dir, f"{prefix}_{cur_time}")
 
-    try:
-        os.makedirs(output_dir, exist_ok=False)
-    except FileExistsError:
-        # make file sleep for a random time
-        import time
-        print("Sleeping for a random time")
-        time.sleep(np.random.randint(1, 10))
-        cur_time = datetime.now().strftime("%Y%m%d-%H%M%S")
-        prefix = f"{args.num_inference_steps}_{args.eta}_{args.num_particles}_{args.top_k}_{args.resample_t_end}_{args.lmbda}_{args.scale}_{args.seed}"
-        output_dir = os.path.join(args.output_dir, f"{prefix}_{cur_time}")
-        os.makedirs(output_dir, exist_ok=False)
+    os.makedirs(output_dir, exist_ok=True)
 
     arg_path = os.path.join(output_dir, "args.json")
     with open(arg_path, "w") as f:

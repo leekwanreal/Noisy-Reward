@@ -143,17 +143,7 @@ def main(args):
     prefix = f"{args.seed}_{args.num_particles}_{args.num_inference_steps}"
     output_dir = os.path.join(args.output_dir, f"{prefix}")
 
-    try:
-        os.makedirs(output_dir, exist_ok=False)
-    except FileExistsError:
-        # make file sleep for a random time
-        import time
-
-        print("Sleeping for a random time")
-        time.sleep(np.random.randint(1, 10))
-        prefix = f"{args.seed}_{args.num_particles}_{args.num_inference_steps}"
-        output_dir = os.path.join(args.output_dir, f"{prefix}")
-        os.makedirs(output_dir, exist_ok=False)
+    os.makedirs(output_dir, exist_ok=True)
 
     arg_path = os.path.join(output_dir, "args.json")
     with open(arg_path, "w") as f:
