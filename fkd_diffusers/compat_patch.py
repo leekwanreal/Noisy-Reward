@@ -3,6 +3,7 @@ import types
 import torch
 import transformers.modeling_utils
 import transformers.pytorch_utils
+import transformers.tokenization_utils_base
 
 def apply_compat_patches():
     # 1. Mock wandb to prevent broken wandb.proto protobuf errors on ImageReward.ReFL import
@@ -62,5 +63,11 @@ def apply_compat_patches():
             setattr(mod, "find_pruneable_heads_and_indices", find_pruneable_heads_and_indices)
         if not hasattr(mod, "prune_linear_layer"):
             setattr(mod, "prune_linear_layer", prune_linear_layer)
+
+    # 3. Tokenizer backwards-compatibility for BertTokenizer in BLIP/ImageReward
+    def _get_additional_special_tokens_ids(self):
+        return self.convert_tokens_to_ids(self.additional_special_tokens)
+    
+    transformers.tokenization_utils_base.PreTrainedTokenizerBase.additional_special_tokens_ids = property(_get_additional_special_tokens_ids)
 
 apply_compat_patches()
