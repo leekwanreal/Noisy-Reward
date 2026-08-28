@@ -43,6 +43,21 @@ def load_geneval_metadata(prompt_path, max_prompts=None):
     return data
 
 
+def is_lookahead_complete(prompt_path):
+    results_file = os.path.join(prompt_path, "results.json")
+    latent_file = os.path.join(prompt_path, "samples", "latent.pt")
+    if not os.path.exists(results_file) or not os.path.exists(latent_file):
+        return False
+    if os.path.getsize(results_file) == 0 or os.path.getsize(latent_file) == 0:
+        return False
+    try:
+        with open(results_file, "r") as f:
+            data = json.load(f)
+            if "ImageReward" not in data or "result" not in data["ImageReward"]:
+                return False
+    except Exception:
+        return False
+    return True
 
 
 def main(args):
@@ -172,25 +187,6 @@ def main(args):
     }
     n_samples = 0
     average_time = 0
-
-
-
-def is_lookahead_complete(prompt_path):
-    results_file = os.path.join(prompt_path, "results.json")
-    latent_file = os.path.join(prompt_path, "samples", "latent.pt")
-    if not os.path.exists(results_file) or not os.path.exists(latent_file):
-        return False
-    if os.path.getsize(results_file) == 0 or os.path.getsize(latent_file) == 0:
-        return False
-    try:
-        with open(results_file, "r") as f:
-            data = json.load(f)
-            if "ImageReward" not in data or "result" not in data["ImageReward"]:
-                return False
-    except Exception:
-        return False
-    return True
-
 
     for prompt_idx, item in enumerate(tqdm(prompt_data)):
         if prompt_idx % args.num_splits != args.split_idx:
