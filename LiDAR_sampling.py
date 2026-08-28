@@ -124,9 +124,12 @@ def main(args):
 
 
     for prompt_idx, item in enumerate(tqdm(prompt_data)):
-        prompt = [item["prompt"]] * args.num_particles
-
         prompt_path = os.path.join(output_dir, f"{prompt_idx:0>5}")
+        results_file = os.path.join(prompt_path, "results.json")
+        if os.path.exists(results_file):
+            continue
+
+        prompt = [item["prompt"]] * args.num_particles
         os.makedirs(prompt_path, exist_ok=True)
 
         # dump metadata
