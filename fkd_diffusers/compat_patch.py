@@ -1,6 +1,7 @@
 import sys
 import types
 import torch
+import torch.nn as nn
 import transformers.modeling_utils
 import transformers.pytorch_utils
 import transformers.tokenization_utils_base
@@ -64,13 +65,33 @@ def apply_compat_patches():
         if not hasattr(mod, "prune_linear_layer"):
             setattr(mod, "prune_linear_layer", prune_linear_layer)
 
-    # 3. Model weights tying compatibility (all_tied_weights_keys)
-    def _get_tied_keys(self):
-        return getattr(self, "_tied_weights_keys", [])
+    # 3. Universal torch.nn.Module fallback for all_tied_weights_keys to support BLIP BertModel
+    _orig_nn_getattr = nn.Module.__getattr__
 
-    transformers.modeling_utils.PreTrainedModel.all_tied_weights_keys = property(_get_tied_keys)
-    if not hasattr(transformers.modeling_utils.PreTrainedModel, "_tied_weights_keys"):
-        transformers.modeling_utils.PreTrainedModel._tied_weights_keys = []
+    def _safe_nn_getattr(self, name):
+        if name == "all_tied_weights_keys":
+            return getattr(self, "_tied_weights_keys", [])
+        if name == "_tied_weights_keys":
+            return []
+        return _orig_nn_getattr(self, name)
+
+    nn.Module.__getattr__ = _safe_nn_getattr
+
+    # Also patch tie_weights directly
+    if hasattr(transformers.modeling_utils.PreTrainedModel, "tie_weights"):
+        _orig_tie_weights = transformers.modeling_utils.PreTrainedModel.tie_weights
+        def _safe_tie_weights(self, *args, **kwargs):
+            if "all_tied_weights_keys" not in self.__dict__:
+                self.__dict__["all_tied_weights_keys"] = []
+            if "_tied_weights_keys" not in self.__dict__:
+                self.__dict__["_tied_weights_keys"] = []
+            try:
+                return _orig_tie_weights(self, *args, **kwargs)
+            except AttributeError as e:
+                if "all_tied_weights_keys" in str(e) or "_tied_weights_keys" in str(e):
+                    return
+                raise
+        transformers.modeling_utils.PreTrainedModel.tie_weights = _safe_tie_weights
 
     # 4. Tokenizer backwards-compatibility for BertTokenizer in BLIP/ImageReward
     _orig_add_special_tokens = transformers.tokenization_utils_base.PreTrainedTokenizerBase.add_special_tokens
@@ -89,8 +110,8 @@ def apply_compat_patches():
 
     transformers.tokenization_utils_base.PreTrainedTokenizerBase.add_special_tokens = _patched_add_special_tokens
 
-    _orig_getattr = getattr(transformers.tokenization_utils_base.PreTrainedTokenizerBase, "__getattr__", None)
-    def _patched_getattr(self, key):
+    _orig_tok_getattr = getattr(transformers.tokenization_utils_base.PreTrainedTokenizerBase, "__getattr__", None)
+    def _patched_tok_getattr(self, key):
         if key == "additional_special_tokens_ids":
             ids = []
             if hasattr(self, "additional_special_tokens") and self.additional_special_tokens:
@@ -112,21 +133,17 @@ def apply_compat_patches():
             if not ids:
                 ids = [30522]
             return ids
-        if _orig_getattr is not None:
-            return _orig_getattr(self, key)
+        if _orig_tok_getattr is not None:
+            return _orig_tok_getattr(self, key)
         raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
 
-    transformers.tokenization_utils_base.PreTrainedTokenizerBase.__getattr__ = _patched_getattr
+    transformers.tokenization_utils_base.PreTrainedTokenizerBase.__getattr__ = _patched_tok_getattr
 
-    # 5. Direct patch to ImageReward BLIP classes if already loaded or on demand
+    # 5. Direct patch to ImageReward BLIP init_tokenizer function
     try:
         import ImageReward.models.BLIP.blip as blip_mod
         import ImageReward.models.BLIP.blip_pretrain as blip_pretrain_mod
-        import ImageReward.models.BLIP.med as med_mod
         from transformers import BertTokenizer
-
-        med_mod.BertModel.all_tied_weights_keys = property(_get_tied_keys)
-        med_mod.BertModel._tied_weights_keys = []
 
         def safe_init_tokenizer():
             tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
