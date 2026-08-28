@@ -1,8 +1,35 @@
 from typing import Union
 import os
 import torch
-
 from PIL import Image
+
+# Monkeypatch for ImageReward compatibility with newer transformers versions
+import transformers.modeling_utils
+import transformers.pytorch_utils
+
+if not hasattr(transformers.modeling_utils, "apply_chunking_to_forward"):
+    def apply_chunking_to_forward(forward_fn, chunk_size, chunk_dim, *args):
+        assert len(args) == 1
+        arg = args[0]
+        num_chunks = max(1, arg.shape[chunk_dim] // chunk_size)
+        return torch.cat([forward_fn(x) for x in arg.chunk(num_chunks, dim=chunk_dim)], dim=chunk_dim)
+    transformers.modeling_utils.apply_chunking_to_forward = apply_chunking_to_forward
+
+if not hasattr(transformers.pytorch_utils, "find_pruneable_heads_and_indices"):
+    def find_pruneable_heads_and_indices(heads, n_heads, head_size, already_pruned_heads):
+        mask = torch.ones(n_heads, head_size)
+        heads = set(heads) - already_pruned_heads
+        for head in heads:
+            head = head - sum(1 if h < head else 0 for h in already_pruned_heads)
+            mask[head] = 0
+        mask = mask.view(-1).contiguous().eq(1)
+        index = torch.arange(len(mask))[mask].long()
+        return heads, index
+    transformers.pytorch_utils.find_pruneable_heads_and_indices = find_pruneable_heads_and_indices
+
+if not hasattr(transformers.modeling_utils, "find_pruneable_heads_and_indices"):
+    transformers.modeling_utils.find_pruneable_heads_and_indices = transformers.pytorch_utils.find_pruneable_heads_and_indices
+
 import ImageReward as RM
 
 
