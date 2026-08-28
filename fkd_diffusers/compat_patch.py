@@ -19,7 +19,10 @@ def apply_compat_patches():
         try:
             import wandb
         except Exception:
+            import importlib.machinery
             mock_wandb = types.ModuleType("wandb")
+            mock_wandb.__spec__ = importlib.machinery.ModuleSpec("wandb", loader=None)
+            mock_wandb.__file__ = "mock_wandb"
             mock_wandb.init = lambda *args, **kwargs: None
             mock_wandb.log = lambda *args, **kwargs: None
             mock_wandb.finish = lambda *args, **kwargs: None
