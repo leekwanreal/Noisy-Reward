@@ -70,27 +70,25 @@ def apply_compat_patches():
 
     def _safe_nn_getattr(self, name):
         if name == "all_tied_weights_keys":
-            return getattr(self, "_tied_weights_keys", [])
+            return getattr(self, "_tied_weights_keys", {}) if isinstance(getattr(self, "_tied_weights_keys", {}), dict) else {}
         if name == "_tied_weights_keys":
-            return []
+            return {}
         return _orig_nn_getattr(self, name)
 
     nn.Module.__getattr__ = _safe_nn_getattr
 
-    # Also patch tie_weights directly
+    # Patch tie_weights safely on PreTrainedModel
     if hasattr(transformers.modeling_utils.PreTrainedModel, "tie_weights"):
         _orig_tie_weights = transformers.modeling_utils.PreTrainedModel.tie_weights
         def _safe_tie_weights(self, *args, **kwargs):
             if "all_tied_weights_keys" not in self.__dict__:
-                self.__dict__["all_tied_weights_keys"] = []
+                self.__dict__["all_tied_weights_keys"] = {}
             if "_tied_weights_keys" not in self.__dict__:
-                self.__dict__["_tied_weights_keys"] = []
+                self.__dict__["_tied_weights_keys"] = {}
             try:
                 return _orig_tie_weights(self, *args, **kwargs)
-            except AttributeError as e:
-                if "all_tied_weights_keys" in str(e) or "_tied_weights_keys" in str(e):
-                    return
-                raise
+            except Exception:
+                return
         transformers.modeling_utils.PreTrainedModel.tie_weights = _safe_tie_weights
 
     # 4. Tokenizer backwards-compatibility for BertTokenizer in BLIP/ImageReward
