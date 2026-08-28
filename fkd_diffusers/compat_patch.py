@@ -1,13 +1,39 @@
 import sys
 import types
+import os
+
+# Disable TensorFlow / Flax in PyTorch environment to prevent Protobuf conflicts
+os.environ["USE_TF"] = "0"
+os.environ["USE_FLAX"] = "0"
+sys.modules["tensorflow"] = None
+sys.modules["flax"] = None
+
+# Patch google.protobuf.runtime_version if missing
+try:
+    import google.protobuf
+    if not hasattr(google.protobuf, "runtime_version"):
+        dummy_rv = types.ModuleType("runtime_version")
+        dummy_rv.ValidateProtobufRuntimeVersion = lambda *args, **kwargs: None
+        dummy_rv.Domain = type("Domain", (), {"PUBLIC": 0})
+        google.protobuf.runtime_version = dummy_rv
+        sys.modules["google.protobuf.runtime_version"] = dummy_rv
+except Exception:
+    pass
+
 import torch
 import torch.nn as nn
 import transformers
 import transformers.modeling_utils
 import transformers.pytorch_utils
 import transformers.tokenization_utils_base
+import transformers.utils.import_utils
 
 def apply_compat_patches():
+    # Force PyTorch only in transformers import_utils
+    transformers.utils.import_utils.is_tf_available = lambda: False
+    transformers.utils.import_utils.is_flax_available = lambda: False
+    transformers.utils.import_utils.is_tensorflow_probability_available = lambda: False
+
     # 0. Transformers Cache stub classes for peft compatibility across all transformers versions
     for cache_cls in ["EncoderDecoderCache", "DynamicCache", "Cache", "StaticCache", "SlidingWindowCache", "QuantizedCacheConfig", "HybridCache"]:
         if not hasattr(transformers, cache_cls):
