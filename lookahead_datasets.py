@@ -45,19 +45,26 @@ def init_tokenizer():
 class gen_lookahead_samples(Dataset):
     def __init__(self, directory, top_k):
         print("top_k:", top_k)
-        self.dataset_path = f"Lookahead_samples/{directory}"
+        if os.path.isabs(directory) or os.path.exists(directory):
+            self.dataset_path = directory
+        else:
+            self.dataset_path = f"Lookahead_samples/{directory}"
+            
         data = []
-        for i in range(553):  # 00000 ~ 00552
-            latent_path = f"{self.dataset_path}/{i:05d}/samples/latent.pt"
+        prompt_dirs = sorted([d for d in os.listdir(self.dataset_path) if os.path.isdir(os.path.join(self.dataset_path, d)) and d.isdigit()])
+        for d in prompt_dirs:
+            latent_path = f"{self.dataset_path}/{d}/samples/latent.pt"
+            if not os.path.exists(latent_path):
+                continue
             latent = torch.load(latent_path, map_location="cpu")
-            with open(f"{self.dataset_path}/{i:05d}/results.json", "r") as f:
+            with open(f"{self.dataset_path}/{d}/results.json", "r") as f:
                 label = json.load(f)
             reward = label["ImageReward"]["result"]
             prompt = label["prompt"]
 
-
             random.seed(42)
-            indices = random.sample(range(len(latent)), top_k)
+            k = min(top_k, len(latent))
+            indices = random.sample(range(len(latent)), k)
             latents = [latent[i] for i in indices]
             rewards = [reward[i] for i in indices]
             prompts = [prompt[i] for i in indices]
