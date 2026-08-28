@@ -123,10 +123,34 @@ def main(args):
         lookaheads = gen_lookahead_samples(args.lookahead_path,args.top_k)
 
 
+def is_target_complete(prompt_path, num_particles=4, save_individual_images=True):
+    results_file = os.path.join(prompt_path, "results.json")
+    if not os.path.exists(results_file) or os.path.getsize(results_file) == 0:
+        return False
+    try:
+        with open(results_file, "r") as f:
+            data = json.load(f)
+            if "ImageReward" not in data:
+                return False
+    except Exception:
+        return False
+    if save_individual_images:
+        grid_file = os.path.join(prompt_path, "grid.png")
+        if not os.path.exists(grid_file) or os.path.getsize(grid_file) == 0:
+            return False
+        for idx in range(num_particles):
+            img_f = os.path.join(prompt_path, "samples", f"{idx:05}.png")
+            if not os.path.exists(img_f) or os.path.getsize(img_f) == 0:
+                return False
+        best_f = os.path.join(prompt_path, "best_of_n_samples", "00000.png")
+        if not os.path.exists(best_f) or os.path.getsize(best_f) == 0:
+            return False
+    return True
+
+
     for prompt_idx, item in enumerate(tqdm(prompt_data)):
         prompt_path = os.path.join(output_dir, f"{prompt_idx:0>5}")
-        results_file = os.path.join(prompt_path, "results.json")
-        if os.path.exists(results_file):
+        if is_target_complete(prompt_path, num_particles=args.num_particles, save_individual_images=args.save_individual_images):
             continue
 
         prompt = [item["prompt"]] * args.num_particles
