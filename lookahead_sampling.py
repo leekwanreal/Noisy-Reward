@@ -138,6 +138,16 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     pipe = pipe.to(device)
 
+    if hasattr(pipe, "vae") and pipe.vae is not None:
+        try:
+            pipe.vae.enable_slicing()
+        except Exception:
+            pass
+        try:
+            pipe.vae.enable_tiling()
+        except Exception:
+            pass
+
     # set output directory
     prefix = f"{args.seed}_{args.num_particles}_{args.num_inference_steps}"
     output_dir = os.path.join(args.output_dir, f"{prefix}")
@@ -201,7 +211,13 @@ def main(args):
                 images = pipe.vae.decode(latents, return_dict=False)[0]
                 images = pipe.image_processor.postprocess(images, output_type="pil")
             else:
-                images = pipe.vae.decode( latents / pipe.vae.config.scaling_factor,return_dict=False)[0]
+                image_list = []
+                chunk_size = 4
+                for c_idx in range(0, latents.shape[0], chunk_size):
+                    chunk_latents = latents[c_idx:c_idx + chunk_size] / pipe.vae.config.scaling_factor
+                    decoded = pipe.vae.decode(chunk_latents, return_dict=False)[0]
+                    image_list.append(decoded)
+                images = torch.cat(image_list, dim=0)
                 images = pipe.image_processor.postprocess(images, output_type="pil")
 
         results = do_eval(prompt=prompt, images=images, metrics_to_compute=metrics_to_compute)
