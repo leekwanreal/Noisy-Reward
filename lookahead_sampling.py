@@ -299,7 +299,7 @@ def main(args):
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output_dir", type=str, default="Lookahead_samples")
-    parser.add_argument("--save_individual_images", type=bool, default=False)
+    parser.add_argument("--save_individual_images", action="store_true", default=False)
     parser.add_argument("--num_particles", type=int, default=100)
     parser.add_argument("--num_inference_steps", type=int, default=100)
     parser.add_argument("--guidance_reward_fn", type=str, default="ImageReward")
