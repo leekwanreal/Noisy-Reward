@@ -193,6 +193,8 @@ def is_lookahead_complete(prompt_path):
 
 
     for prompt_idx, item in enumerate(tqdm(prompt_data)):
+        if prompt_idx % args.num_splits != args.split_idx:
+            continue
         prompt_path = os.path.join(output_dir, f"{prompt_idx:0>5}")
         if is_lookahead_complete(prompt_path):
             continue
@@ -324,6 +326,8 @@ def get_args():
     parser.add_argument("--model_name", type=str, default="runwayml/stable-diffusion-v1-5")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max_prompt", type=int, default=1000)
+    parser.add_argument("--num_splits", type=int, default=1, help="Total number of parallel GPU splits")
+    parser.add_argument("--split_idx", type=int, default=0, help="Index of current GPU split (0 to num_splits-1)")
     args = parser.parse_args()
 
 
