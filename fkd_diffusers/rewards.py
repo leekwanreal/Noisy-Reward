@@ -3,8 +3,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import clip
 import os
-import urllib.request
-from image_reward_utils import rm_load
+try:
+    from fkd_diffusers.image_reward_utils import rm_load
+except ImportError:
+    from image_reward_utils import rm_load
 
 # Stores the reward models
 REWARDS_DICT = {
