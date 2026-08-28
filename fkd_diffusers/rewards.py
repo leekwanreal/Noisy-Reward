@@ -1,3 +1,11 @@
+try:
+    import compat_patch
+except ImportError:
+    try:
+        from fkd_diffusers import compat_patch
+    except Exception:
+        pass
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

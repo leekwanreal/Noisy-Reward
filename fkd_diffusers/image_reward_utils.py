@@ -1,3 +1,11 @@
+try:
+    import compat_patch
+except ImportError:
+    try:
+        from fkd_diffusers import compat_patch
+    except Exception:
+        pass
+
 from typing import Union
 import os
 import torch
