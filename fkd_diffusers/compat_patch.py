@@ -1,8 +1,24 @@
+import sys
+import types
 import torch
 import transformers.modeling_utils
 import transformers.pytorch_utils
 
 def apply_compat_patches():
+    # 1. Mock wandb to prevent broken wandb.proto protobuf errors on ImageReward.ReFL import
+    if "wandb" not in sys.modules:
+        try:
+            import wandb
+        except Exception:
+            mock_wandb = types.ModuleType("wandb")
+            mock_wandb.init = lambda *args, **kwargs: None
+            mock_wandb.log = lambda *args, **kwargs: None
+            mock_wandb.finish = lambda *args, **kwargs: None
+            mock_wandb.watch = lambda *args, **kwargs: None
+            mock_wandb.save = lambda *args, **kwargs: None
+            sys.modules["wandb"] = mock_wandb
+            
+    # 2. Transformers backwards-compatibility for BLIP/ImageReward
     def apply_chunking_to_forward(forward_fn, chunk_size, chunk_dim, *args):
         assert len(args) == 1
         arg = args[0]
