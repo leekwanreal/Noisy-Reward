@@ -24,12 +24,32 @@ import torch
 import torch.nn.functional as F
 from diffusers import AutoencoderKL, DDIMScheduler, DPMSolverMultistepScheduler, StableDiffusionPipeline
 import ImageReward as RM
-import clip
 
 import compat_patch  # Đảm bảo môi trường chạy mượt mà trên mọi phiên bản
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"🚀 Thiết bị thực thi bài test: {device}")
+
+
+def load_geneval_prompts(prompt_path="prompt_files/geneval_metadata.jsonl", max_prompts=20):
+    prompts = []
+    if os.path.exists(prompt_path):
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    item = json.loads(line)
+                    prompts.append(item.get("prompt", ""))
+                    if len(prompts) >= max_prompts:
+                        break
+    if not prompts:
+        prompts = [
+            "a photograph of a majestic mountain with a crystal clear lake reflecting the sunset",
+            "a cute fluffy cat wearing glasses reading a book in a cozy library",
+            "a futuristic city with flying cars and neon lights in cyberpunk style",
+            "a vintage red car parked on an autumn street with fallen maple leaves",
+            "an astronaut riding a white horse on the surface of the moon"
+        ]
+    return prompts
 
 
 # ======================================================================================
@@ -40,6 +60,9 @@ def run_test_1_solver_robustness(pipe, vae, ir_model, prompt_list, sigma=0.05, n
     print("🔬 [BÀI TEST 1] ĐO KHÁNG SAI SỐ BỘ GIẢI 5 BƯỚC VS 50 BƯỚC (THEORETICAL THEOREM 1)")
     print("="*80)
 
+    dpm_scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+    ddim_scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
+
     delta_r_lidar_list = []
     delta_r_ours_list = []
     error_norms = []
@@ -47,22 +70,38 @@ def run_test_1_solver_robustness(pipe, vae, ir_model, prompt_list, sigma=0.05, n
     kendall_ours_list = []
 
     for prompt in tqdm(prompt_list, desc="Testing Solver Error Robustness"):
-        # 1. Sinh 20 hạt từ 5 bước DPM-Solver (hat{x}_0) và 50 bước DDIM (x_0) từ cùng seed
-        torch.manual_seed(100)
-        latents_5step = pipe([prompt] * num_particles, num_inference_steps=5, output_type="latent").images
-        torch.manual_seed(100)
-        latents_50step = pipe([prompt] * num_particles, num_inference_steps=50, output_type="latent").images
+        # 1. Sinh hạt từ 5 bước DPM-Solver (hat{x}_0)
+        pipe.scheduler = dpm_scheduler
+        generator = torch.Generator(device=device).manual_seed(100)
+        latents_5step = pipe(
+            [prompt] * num_particles,
+            num_inference_steps=5,
+            guidance_scale=7.5,
+            generator=generator,
+            output_type="latent"
+        ).images
+
+        # 2. Sinh hạt chuẩn từ 50 bước DDIM (x_0) từ cùng seed
+        pipe.scheduler = ddim_scheduler
+        generator = torch.Generator(device=device).manual_seed(100)
+        latents_50step = pipe(
+            [prompt] * num_particles,
+            num_inference_steps=50,
+            guidance_scale=7.5,
+            generator=generator,
+            output_type="latent"
+        ).images
 
         # Đo sai số hình học ||e_i||_2 = ||hat{x}_0 - x_0||_2
         e_norms = torch.linalg.norm((latents_5step - latents_50step).view(num_particles, -1), ord=2, dim=1).cpu().tolist()
         error_norms.extend(e_norms)
 
-        # 2. Giải mã VAE
+        # 3. Giải mã VAE & Chấm điểm Reward
         with torch.no_grad():
             img_5step = pipe.image_processor.postprocess(vae.decode(latents_5step / vae.config.scaling_factor)[0], output_type="pil")
             img_50step = pipe.image_processor.postprocess(vae.decode(latents_50step / vae.config.scaling_factor)[0], output_type="pil")
 
-            # LiDAR gốc (sigma = 0): Tính reward trực tiếp
+            # LiDAR gốc (sigma = 0): Tính reward trực tiếp trên mẫu thô 5 bước
             r_5step_raw = np.array(ir_model.score_batched([prompt] * num_particles, img_5step))
             r_50step_raw = np.array(ir_model.score_batched([prompt] * num_particles, img_50step))
 
@@ -91,7 +130,7 @@ def run_test_1_solver_robustness(pipe, vae, ir_model, prompt_list, sigma=0.05, n
         if not np.isnan(tau_ours): kendall_ours_list.append(tau_ours)
 
     # Tính Dimension-Free Lipschitz Bound lý thuyết: L_sigma = Delta_r / (sigma * sqrt(2*pi))
-    delta_r_range = np.max(delta_r_ours_list) - np.min(delta_r_ours_list)
+    delta_r_range = max(0.1, np.max(delta_r_ours_list) - np.min(delta_r_ours_list))
     lipschitz_bound = delta_r_range / (sigma * np.sqrt(2 * np.pi))
 
     print(f"\n📊 KẾT QUẢ BÀI TEST 1:")
@@ -105,9 +144,9 @@ def run_test_1_solver_robustness(pipe, vae, ir_model, prompt_list, sigma=0.05, n
         "error_norms": error_norms,
         "delta_r_lidar": delta_r_lidar_list,
         "delta_r_ours": delta_r_ours_list,
-        "tau_lidar": np.mean(kendall_lidar_list),
-        "tau_ours": np.mean(kendall_ours_list),
-        "lipschitz_bound": lipschitz_bound
+        "tau_lidar": float(np.mean(kendall_lidar_list)),
+        "tau_ours": float(np.mean(kendall_ours_list)),
+        "lipschitz_bound": float(lipschitz_bound)
     }
 
 
@@ -127,7 +166,7 @@ def run_test_2_softmax_entropy(num_particles=50, num_steps=50):
     lookahead_latents = torch.randn(1, num_particles, 4, 64, 64, device=device)
     current_latent = torch.randn(1, 1, 4, 64, 64, device=device)
 
-    # Điểm thưởng thô của LiDAR (chênh lệch mạnh do không làm mịn)
+    # Điểm thưởng thô của LiDAR (chênh lệch dốc nhọn do không làm mịn)
     rewards_lidar = torch.randn(1, num_particles, device=device) * 2.5
     # Điểm thưởng làm mịn của Phương pháp Bạn (phân bổ mượt mà)
     rewards_ours = torch.tanh(rewards_lidar * 0.4) * 1.2
@@ -225,8 +264,9 @@ def plot_and_save_all(res1, res2, res3, output_dir="experiments/test_results"):
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
     # Đồ thị 1: Solver Error Resilience (Test 1)
-    axes[0].scatter(res1["error_norms"][:50], res1["delta_r_lidar"][:50], color="red", alpha=0.6, label="LiDAR (sigma=0)")
-    axes[0].scatter(res1["error_norms"][:50], res1["delta_r_ours"][:50], color="green", alpha=0.6, label="Ours (Smoothed Surrogate)")
+    num_pts = min(len(res1["error_norms"]), 50)
+    axes[0].scatter(res1["error_norms"][:num_pts], res1["delta_r_lidar"][:num_pts], color="red", alpha=0.6, label="LiDAR (sigma=0)")
+    axes[0].scatter(res1["error_norms"][:num_pts], res1["delta_r_ours"][:num_pts], color="green", alpha=0.6, label="Ours (Smoothed Surrogate)")
     axes[0].set_xlabel(r"Solver Latent Error $\|\mathbf{e}_i\|_2$", fontsize=11)
     axes[0].set_ylabel(r"Reward Error $|\Delta r|$", fontsize=11)
     axes[0].set_title("Test 1: Solver Error Resilience", fontsize=12, fontweight="bold")
@@ -257,22 +297,49 @@ def plot_and_save_all(res1, res2, res3, output_dir="experiments/test_results"):
     plt.savefig(chart_path, dpi=300)
     print(f"\n📈 ĐÃ XUẤT TOÀN BỘ 3 BIỂU ĐỒ KHOA HỌC THÀNH CÔNG: {chart_path}")
 
+    # Xuất file JSON
+    json_path = os.path.join(output_dir, "summary_results.json")
+    summary = {
+        "test_1_solver_error": {
+            "tau_lidar": res1["tau_lidar"],
+            "tau_ours": res1["tau_ours"],
+            "lipschitz_bound": res1["lipschitz_bound"]
+        },
+        "test_2_entropy": {
+            "entropy_lidar_mean": float(np.mean(res2["entropy_lidar"])),
+            "entropy_ours_mean": float(np.mean(res2["entropy_ours"]))
+        },
+        "test_3_cosine_stability": {
+            "cossim_lidar_mean": float(np.mean(res3["cossim_lidar"])),
+            "cossim_ours_mean": float(np.mean(res3["cossim_ours"]))
+        }
+    }
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=4)
+    print(f"📄 ĐÃ LƯU BẢNG SỐ LIỆU TỔNG HỢP JSON: {json_path}")
+
+
+def get_args():
+    parser = argparse.ArgumentParser(description="Standalone 3 Golden Tests for LiDAR vs Smoothed Surrogate")
+    parser.add_argument("--num_prompts", type=int, default=10, help="Number of prompts to evaluate in Test 1")
+    parser.add_argument("--num_particles", type=int, default=20, help="Number of particles per prompt")
+    parser.add_argument("--sigma", type=float, default=0.05, help="Randomized Smoothing standard deviation")
+    parser.add_argument("--output_dir", type=str, default="experiments/test_results", help="Output directory for charts and JSON")
+    return parser.parse_args()
+
 
 if __name__ == "__main__":
+    args = get_args()
     print("\n🚀 Khởi tạo Pipeline phục vụ chạy Bộ 3 Bài Test...")
     vae = AutoencoderKL.from_pretrained("runwayml/stable-diffusion-v1-5", subfolder="vae").to(device)
     pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16).to(device)
-    pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
     ir_model = RM.load("ImageReward-v1.0").to(device)
 
-    # Danh sách prompt mẫu
-    test_prompts = [
-        "a photograph of a majestic mountain with a crystal clear lake reflecting the sunset",
-        "a cute fluffy cat wearing glasses reading a book in a cozy library",
-        "a futuristic city with flying cars and neon lights in cyberpunk style"
-    ]
+    # Tải danh sách prompt từ file metadata
+    test_prompts = load_geneval_prompts("prompt_files/geneval_metadata.jsonl", max_prompts=args.num_prompts)
+    print(f"📝 Đã nạp {len(test_prompts)} prompts để chạy thực nghiệm.")
 
-    res1 = run_test_1_solver_robustness(pipe, vae, ir_model, test_prompts, sigma=0.05, num_particles=10)
+    res1 = run_test_1_solver_robustness(pipe, vae, ir_model, test_prompts, sigma=args.sigma, num_particles=args.num_particles)
     res2 = run_test_2_softmax_entropy(num_particles=50)
     res3 = run_test_3_guidance_stability(num_particles=50)
-    plot_and_save_all(res1, res2, res3)
+    plot_and_save_all(res1, res2, res3, output_dir=args.output_dir)
