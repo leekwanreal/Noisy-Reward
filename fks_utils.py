@@ -2,6 +2,9 @@
 Utility functions for the FKD pipeline.
 """
 import torch
+import sys
+sys.path.append("fkd_diffusers")
+import compat_patch
 from diffusers import DDIMScheduler
 
 from fkd_pipeline_sdxl import FKDStableDiffusionXL

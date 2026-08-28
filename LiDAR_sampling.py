@@ -16,6 +16,7 @@ from diffusers import DDIMScheduler, UNet2DConditionModel
 
 import sys
 sys.path.append("fkd_diffusers")
+import compat_patch
 
 from fkd_diffusers.fkd_pipeline_sdxl import FKDStableDiffusionXL
 from fkd_diffusers.fkd_pipeline_sd import FKDStableDiffusion

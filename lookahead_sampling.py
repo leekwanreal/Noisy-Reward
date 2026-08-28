@@ -19,7 +19,7 @@ from safetensors.torch import load_file
 
 import sys
 sys.path.append("fkd_diffusers")
-
+import compat_patch
 
 from fks_utils import do_eval
 
