@@ -72,8 +72,12 @@ def main(args):
     torch.cuda.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
+    # load prompt data
+    prompt_data = load_geneval_metadata(args.prompt_path, max_prompts=args.max_prompt)
+
     if args.resample_t_end is None:
         args.resample_t_end = args.num_inference_steps
+
 
     if args.use_smc:
         pipe = FKDStableDiffusionSMC.from_pretrained(
