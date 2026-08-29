@@ -119,9 +119,8 @@ def main(args):
     pipe = pipe.to(device)
 
     # set output directory
-    cur_time = datetime.now().strftime("%Y%m%d-%H%M%S")
     prefix = f"{args.num_inference_steps}_{args.eta}_{args.num_particles}_{args.top_k}_{args.resample_t_end}_{args.lmbda}_{args.scale}_{args.seed}"
-    output_dir = os.path.join(args.output_dir, f"{prefix}_{cur_time}")
+    output_dir = os.path.join(args.output_dir, f"{prefix}")
 
     os.makedirs(output_dir, exist_ok=True)
 
