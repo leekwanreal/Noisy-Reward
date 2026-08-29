@@ -63,6 +63,18 @@ def load_geneval_prompts(prompt_path="prompt_files/geneval_metadata.jsonl", max_
     return prompts
 
 
+def decode_latents(latents, vae, pipe):
+    chunk_size = 10
+    image_list = []
+    latents = latents.to(device=device, dtype=vae.dtype)
+    for c_idx in range(0, latents.shape[0], chunk_size):
+        chunk = latents[c_idx:c_idx + chunk_size] / vae.config.scaling_factor
+        decoded = vae.decode(chunk, return_dict=False)[0]
+        image_list.append(decoded)
+    images = torch.cat(image_list, dim=0)
+    return pipe.image_processor.postprocess(images, output_type="pil")
+
+
 # ======================================================================================
 # 🔬 TEST 1: Kháng Sai số Bộ giải & Kiểm chứng Chặn Dimension-Free Lipschitz
 # ======================================================================================
@@ -130,8 +142,8 @@ def run_test_1_solver_robustness(pipe, vae, ir_model, prompt_list, sigma=0.05, n
 
         # 3. Giải mã VAE & Chấm điểm Reward
         with torch.no_grad():
-            img_5step = pipe.image_processor.postprocess(vae.decode(latents_5step / vae.config.scaling_factor)[0], output_type="pil")
-            img_50step = pipe.image_processor.postprocess(vae.decode(latents_50step / vae.config.scaling_factor)[0], output_type="pil")
+            img_5step = decode_latents(latents_5step, vae, pipe)
+            img_50step = decode_latents(latents_50step, vae, pipe)
 
             # LiDAR gốc (sigma = 0): Tính reward trực tiếp
             r_5step_raw = np.array(ir_model.score_batched([prompt] * num_particles, img_5step))
@@ -143,8 +155,8 @@ def run_test_1_solver_robustness(pipe, vae, ir_model, prompt_list, sigma=0.05, n
             r_50step_smoothed_samples = []
             for _ in range(M):
                 noise = torch.randn_like(latents_5step) * sigma
-                noisy_img_5 = pipe.image_processor.postprocess(vae.decode((latents_5step + noise) / vae.config.scaling_factor)[0], output_type="pil")
-                noisy_img_50 = pipe.image_processor.postprocess(vae.decode((latents_50step + noise) / vae.config.scaling_factor)[0], output_type="pil")
+                noisy_img_5 = decode_latents(latents_5step + noise, vae, pipe)
+                noisy_img_50 = decode_latents(latents_50step + noise, vae, pipe)
                 r_5step_smoothed_samples.append(ir_model.score_batched([prompt] * num_particles, noisy_img_5))
                 r_50step_smoothed_samples.append(ir_model.score_batched([prompt] * num_particles, noisy_img_50))
 
@@ -405,11 +417,17 @@ def plot_and_save_all(res1, res2, res3, output_dir="experiments/test_results"):
 
 
 def get_args():
+    default_lookahead = "/kaggle/working/LiDAR_Experiment/Lookahead_samples/100_50_5"
+    for candidate in ["/kaggle/working/LiDAR_Experiment/Lookahead_samples/100_50_5", "/content/drive/MyDrive/LiDAR_Experiment/Lookahead_samples/100_50_5", "Lookahead_samples/100_50_5"]:
+        if os.path.exists(candidate):
+            default_lookahead = candidate
+            break
+
     parser = argparse.ArgumentParser(description="Standalone 3 Golden Tests for LiDAR vs Smoothed Surrogate")
     parser.add_argument("--num_prompts", type=int, default=-1, help="Number of prompts to evaluate in Test 1 (-1 for all 553 GenEval prompts)")
     parser.add_argument("--num_particles", type=int, default=20, help="Number of particles per prompt")
     parser.add_argument("--sigma", type=float, default=0.05, help="Randomized Smoothing standard deviation")
-    parser.add_argument("--lookahead_dir", type=str, default="/content/drive/MyDrive/LiDAR_Experiment/Lookahead_samples/100_50_5", help="Path to pre-generated Lookahead samples on Drive")
+    parser.add_argument("--lookahead_dir", type=str, default=default_lookahead, help="Path to pre-generated Lookahead samples")
     parser.add_argument("--output_dir", type=str, default="experiments/test_results", help="Output directory for charts and JSON")
     return parser.parse_args()
 
@@ -417,8 +435,8 @@ def get_args():
 if __name__ == "__main__":
     args = get_args()
     print("\n🚀 Khởi tạo Pipeline phục vụ chạy Bộ 3 Bài Test...")
-    vae = AutoencoderKL.from_pretrained("runwayml/stable-diffusion-v1-5", subfolder="vae").to(device)
     pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16).to(device)
+    vae = pipe.vae
     ir_model = RM.load("ImageReward-v1.0").to(device)
 
     # Tải danh sách prompt từ file metadata (Mặc định tải toàn bộ 553 prompts nếu num_prompts=-1)
