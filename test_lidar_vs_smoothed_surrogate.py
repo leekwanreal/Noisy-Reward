@@ -72,16 +72,35 @@ def load_geneval_prompts(prompt_path="prompt_files/geneval_metadata.jsonl", max_
     return prompts
 
 
-def decode_latents(latents, vae, pipe):
-    chunk_size = 10
+@torch.inference_mode()
+def decode_latents(latents, vae, pipe, chunk_size=2):
     image_list = []
     latents = latents.to(device=device, dtype=vae.dtype)
     for c_idx in range(0, latents.shape[0], chunk_size):
         chunk = latents[c_idx:c_idx + chunk_size] / vae.config.scaling_factor
         decoded = vae.decode(chunk, return_dict=False)[0]
-        image_list.append(decoded)
+        image_list.append(decoded.detach().cpu())
+        torch.cuda.empty_cache()
     images = torch.cat(image_list, dim=0)
     return pipe.image_processor.postprocess(images, output_type="pil")
+
+
+@torch.inference_mode()
+def generate_latents_batched(pipe, prompt, num_particles, num_inference_steps, seed, batch_size=4):
+    all_latents = []
+    for i in range(0, num_particles, batch_size):
+        curr_batch = min(batch_size, num_particles - i)
+        generator = torch.Generator(device=device).manual_seed(seed + i)
+        latents = pipe(
+            [prompt] * curr_batch,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=7.5,
+            generator=generator,
+            output_type="latent"
+        ).images
+        all_latents.append(latents)
+        torch.cuda.empty_cache()
+    return torch.cat(all_latents, dim=0)
 
 
 # ======================================================================================
@@ -113,9 +132,9 @@ def run_test_1_solver_robustness(pipe, vae, ir_model, prompt_list, sigma=0.05, n
                 kendall_lidar_list = ckpt.get("kendall_lidar", [])
                 kendall_ours_list = ckpt.get("kendall_ours", [])
                 start_idx = ckpt.get("processed_prompts", 0)
-                print(f"🔄 Đã tìm thấy checkpoint! Tiếp tục chạy từ prompt thứ {start_idx + 1}/{len(prompt_list)}...")
-        except Exception:
-            pass
+                print(f"🔄 Đã tự động khôi phục từ Checkpoint! Tiếp tục từ prompt thứ {start_idx + 1}/{len(prompt_list)}...")
+        except Exception as e:
+            print(f"⚠️ Không đọc được checkpoint, chạy lại từ đầu: {e}")
 
     dpm_scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
     ddim_scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
@@ -123,36 +142,22 @@ def run_test_1_solver_robustness(pipe, vae, ir_model, prompt_list, sigma=0.05, n
     for p_idx in tqdm(range(start_idx, len(prompt_list)), desc="Evaluating Test 1 Prompts"):
         prompt = prompt_list[p_idx]
 
-        # 1. Sinh hạt từ 5 bước DPM-Solver (hat{x}_0)
+        # 1. Sinh hạt từ 5 bước DPM-Solver (hat{x}_0) theo micro-batch chống OOM
         pipe.scheduler = dpm_scheduler
-        generator = torch.Generator(device=device).manual_seed(100 + p_idx)
-        latents_5step = pipe(
-            [prompt] * num_particles,
-            num_inference_steps=5,
-            guidance_scale=7.5,
-            generator=generator,
-            output_type="latent"
-        ).images
+        latents_5step = generate_latents_batched(pipe, prompt, num_particles=num_particles, num_inference_steps=5, seed=100 + p_idx, batch_size=4)
 
         # 2. Sinh hạt chuẩn từ 50 bước DDIM (x_0) từ cùng seed
         pipe.scheduler = ddim_scheduler
-        generator = torch.Generator(device=device).manual_seed(100 + p_idx)
-        latents_50step = pipe(
-            [prompt] * num_particles,
-            num_inference_steps=50,
-            guidance_scale=7.5,
-            generator=generator,
-            output_type="latent"
-        ).images
+        latents_50step = generate_latents_batched(pipe, prompt, num_particles=num_particles, num_inference_steps=50, seed=100 + p_idx, batch_size=4)
 
         # Đo sai số hình học ||e_i||_2 = ||hat{x}_0 - x_0||_2
         e_norms = torch.linalg.norm((latents_5step - latents_50step).view(num_particles, -1), ord=2, dim=1).cpu().tolist()
         error_norms.extend(e_norms)
 
-        # 3. Giải mã VAE & Chấm điểm Reward
-        with torch.no_grad():
-            img_5step = decode_latents(latents_5step, vae, pipe)
-            img_50step = decode_latents(latents_50step, vae, pipe)
+        # 3. Giải mã VAE & Chấm điểm Reward an toàn VRAM
+        with torch.inference_mode():
+            img_5step = decode_latents(latents_5step, vae, pipe, chunk_size=2)
+            img_50step = decode_latents(latents_50step, vae, pipe, chunk_size=2)
 
             # LiDAR gốc (sigma = 0): Tính reward trực tiếp
             r_5step_raw = np.array(ir_model.score_batched([prompt] * num_particles, img_5step))
@@ -164,8 +169,8 @@ def run_test_1_solver_robustness(pipe, vae, ir_model, prompt_list, sigma=0.05, n
             r_50step_smoothed_samples = []
             for _ in range(M):
                 noise = torch.randn_like(latents_5step) * sigma
-                noisy_img_5 = decode_latents(latents_5step + noise, vae, pipe)
-                noisy_img_50 = decode_latents(latents_50step + noise, vae, pipe)
+                noisy_img_5 = decode_latents(latents_5step + noise, vae, pipe, chunk_size=2)
+                noisy_img_50 = decode_latents(latents_50step + noise, vae, pipe, chunk_size=2)
                 r_5step_smoothed_samples.append(ir_model.score_batched([prompt] * num_particles, noisy_img_5))
                 r_50step_smoothed_samples.append(ir_model.score_batched([prompt] * num_particles, noisy_img_50))
 
@@ -446,6 +451,17 @@ if __name__ == "__main__":
     print("\n🚀 Khởi tạo Pipeline phục vụ chạy Bộ 3 Bài Test...")
     pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16).to(device)
     vae = pipe.vae
+    if hasattr(pipe, "vae") and pipe.vae is not None:
+
+        try:
+            pipe.vae.enable_slicing()
+        except Exception:
+            pass
+        try:
+            pipe.vae.enable_tiling()
+        except Exception:
+            pass
+
     try:
         ir_model = rm_load("ImageReward-v1.0", device=device)
     except TypeError:
