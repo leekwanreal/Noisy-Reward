@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter / IPython checkpoints
+.ipynb_checkpoints/
+
+# Context, documentation, PDFs and extracted text files used for agent querying
+*.pdf
+*.txt
+README_CONTEXT.md
+LIDAR_PAPER_EXTRACTED.txt
+
+# Experiment outputs, caches & data files
+experiments/
+Lookahead_samples/
+Target_samples/
+LiDAR_Experiment/
+*.zip
+*.pt
+*.safetensors
