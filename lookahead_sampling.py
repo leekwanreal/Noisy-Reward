@@ -46,13 +46,11 @@ def load_geneval_metadata(prompt_path, max_prompts=None):
 def is_lookahead_complete(prompt_path):
     results_file = os.path.join(prompt_path, "results.json")
     if os.path.exists(results_file) and os.path.getsize(results_file) > 0:
-        try:
-            with open(results_file, "r") as f:
-                data = json.load(f)
-                if "ImageReward" in data:
-                    return True
-        except Exception:
-            pass
+        return True
+    p_name = os.path.basename(prompt_path)
+    for alt_res in glob.glob(f"/kaggle/input/**/Lookahead_samples/*/{p_name}/results.json", recursive=True):
+        if os.path.exists(alt_res) and os.path.getsize(alt_res) > 0:
+            return True
     return False
 
 
