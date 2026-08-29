@@ -72,58 +72,60 @@ def main(args):
     torch.cuda.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
 
-    if "stabilityai/stable-diffusion-xl" in args.model_name or "SDXL" in args.model_name or "sdxl" in args.model_name:
-        if "sdxl_lightning_4step_lora.safetensors" in args.model_name:
-            print("Using FKDStableDiffusionXL (SDXL-Lightning)")
-            pipe = FKDStableDiffusionXL.from_pretrained(
-                "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16
+    if args.resample_t_end is None:
+        args.resample_t_end = args.num_inference_steps
+
+    if args.use_smc:
+        pipe = FKDStableDiffusionSMC.from_pretrained(
+            args.model_name, torch_dtype=torch.float16
+        )
+    elif "runwayml/stable-diffusion-v1-5" in args.model_name and args.use_rag:
+        print("Using FKDStableDiffusionRAG")
+        pipe = FKDStableDiffusionRAG.from_pretrained(
+            args.model_name, torch_dtype=torch.float16
+        )
+    elif "sdxl_lightning_4step_lora.safetensors" in args.model_name and args.use_rag:
+        print("Using FKDStableDiffusionXLRAG")
+        pipe = FKDStableDiffusionXLRAG.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16
+        )
+        pipe.load_lora_weights(
+            hf_hub_download(
+                "ByteDance/SDXL-Lightning", "sdxl_lightning_4step_lora.safetensors"
             )
-            pipe.load_lora_weights(
+        )
+        pipe.fuse_lora()
+    elif "Hyper-SDXL-1step-Unet.safetensors" in args.model_name and args.use_rag:
+        print("Using FKDStableDiffusionXLRAG")
+        pipe = FKDStableDiffusionXLRAG.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16
+        )
+        unet = UNet2DConditionModel.from_config(
+            pipe.unet.config,
+        ).to(torch.float16)
+        unet.load_state_dict(
+            load_file(
                 hf_hub_download(
-                    "ByteDance/SDXL-Lightning", "sdxl_lightning_4step_lora.safetensors"
+                    "ByteDance/Hyper-SD", "Hyper-SDXL-1step-Unet.safetensors"
                 )
             )
-            pipe.fuse_lora()
-        elif "Hyper-SDXL-1step-Unet.safetensors" in args.model_name:
-            print("Using FKDStableDiffusionXL (Hyper-SDXL)")
-            pipe = FKDStableDiffusionXL.from_pretrained(
-                "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16
-            )
-            unet = UNet2DConditionModel.from_config(
-                pipe.unet.config,
-            ).to(torch.float16)
-            unet.load_state_dict(
-                load_file(
-                    hf_hub_download(
-                        "ByteDance/Hyper-SD", "Hyper-SDXL-1step-Unet.safetensors"
-                    )
-                )
-            )
-            pipe.unet = unet
-        else:
-            print("Using FKDStableDiffusionXL")
-            pipe = FKDStableDiffusionXL.from_pretrained(
-                "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16
-            )
+        )
+        pipe.unet = unet
+    elif "stabilityai/stable-diffusion-xl-base-1.0" in args.model_name:
+        print("Using SDXL")
+        pipe = FKDStableDiffusionXL.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16
+        )
+    # elif "black-forest-labs/FLUX.1-dev" in args.model_name:
+    #     print("Using FLUX")
+    #     pipe = FluxPipeline_LiDAR.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
+
     else:
-        print("Using FKDStableDiffusion (SD v1.5)")
         pipe = FKDStableDiffusion.from_pretrained(
             args.model_name, torch_dtype=torch.float16
         )
-
-    if hasattr(pipe, "vae") and pipe.vae is not None:
-        try:
-            pipe.vae.enable_slicing()
-        except Exception:
-            pass
-        try:
-            pipe.vae.enable_tiling()
-        except Exception:
-            pass
-
     if "FLUX" not in args.model_name:
         pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
-
 
     # set device
     device = "cuda" if torch.cuda.is_available() else "cpu"
