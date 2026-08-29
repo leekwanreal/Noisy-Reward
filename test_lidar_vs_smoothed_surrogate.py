@@ -121,20 +121,23 @@ def run_test_1_solver_robustness(pipe, vae, ir_model, prompt_list, sigma=0.05, n
     kendall_ours_list = []
     start_idx = 0
 
-    # Khôi phục từ checkpoint nếu có
-    if os.path.exists(checkpoint_file):
-        try:
-            with open(checkpoint_file, "r", encoding="utf-8") as f:
-                ckpt = json.load(f)
-                delta_r_lidar_list = ckpt.get("delta_r_lidar", [])
-                delta_r_ours_list = ckpt.get("delta_r_ours", [])
-                error_norms = ckpt.get("error_norms", [])
-                kendall_lidar_list = ckpt.get("kendall_lidar", [])
-                kendall_ours_list = ckpt.get("kendall_ours", [])
-                start_idx = ckpt.get("processed_prompts", 0)
-                print(f"🔄 Đã tự động khôi phục từ Checkpoint! Tiếp tục từ prompt thứ {start_idx + 1}/{len(prompt_list)}...")
-        except Exception as e:
-            print(f"⚠️ Không đọc được checkpoint, chạy lại từ đầu: {e}")
+    # Khôi phục từ checkpoint nếu có (quét cả output_dir và /kaggle/input)
+    candidate_ckpts = [checkpoint_file] + glob.glob("/kaggle/input/**/test_1_checkpoint.json", recursive=True) + glob.glob("../**/test_1_checkpoint.json", recursive=True)
+    for c_path in candidate_ckpts:
+        if os.path.exists(c_path) and os.path.getsize(c_path) > 0:
+            try:
+                with open(c_path, "r", encoding="utf-8") as f:
+                    ckpt = json.load(f)
+                    delta_r_lidar_list = ckpt.get("delta_r_lidar", [])
+                    delta_r_ours_list = ckpt.get("delta_r_ours", [])
+                    error_norms = ckpt.get("error_norms", [])
+                    kendall_lidar_list = ckpt.get("kendall_lidar", [])
+                    kendall_ours_list = ckpt.get("kendall_ours", [])
+                    start_idx = ckpt.get("processed_prompts", 0)
+                    print(f"🔄 Đã tự động khôi phục từ Checkpoint ({c_path})! Tiếp tục từ prompt thứ {start_idx + 1}/{len(prompt_list)}...")
+                break
+            except Exception as e:
+                print(f"⚠️ Không đọc được checkpoint {c_path}: {e}")
 
     dpm_scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
     ddim_scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
