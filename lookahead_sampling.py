@@ -45,19 +45,15 @@ def load_geneval_metadata(prompt_path, max_prompts=None):
 
 def is_lookahead_complete(prompt_path):
     results_file = os.path.join(prompt_path, "results.json")
-    latent_file = os.path.join(prompt_path, "samples", "latent.pt")
-    if not os.path.exists(results_file) or not os.path.exists(latent_file):
-        return False
-    if os.path.getsize(results_file) == 0 or os.path.getsize(latent_file) == 0:
-        return False
-    try:
-        with open(results_file, "r") as f:
-            data = json.load(f)
-            if "ImageReward" not in data or "result" not in data["ImageReward"]:
-                return False
-    except Exception:
-        return False
-    return True
+    if os.path.exists(results_file) and os.path.getsize(results_file) > 0:
+        try:
+            with open(results_file, "r") as f:
+                data = json.load(f)
+                if "ImageReward" in data:
+                    return True
+        except Exception:
+            pass
+    return False
 
 
 def main(args):
@@ -165,7 +161,11 @@ def main(args):
 
     # set output directory
     prefix = f"{args.seed}_{args.num_particles}_{args.num_inference_steps}"
-    output_dir = os.path.join(args.output_dir, f"{prefix}")
+    existing_dirs = sorted(glob.glob(os.path.join(args.output_dir, f"{prefix}*")))
+    if existing_dirs:
+        output_dir = existing_dirs[-1]
+    else:
+        output_dir = os.path.join(args.output_dir, f"{prefix}")
 
     os.makedirs(output_dir, exist_ok=True)
 

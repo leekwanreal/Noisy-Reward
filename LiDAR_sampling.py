@@ -48,27 +48,15 @@ def load_geneval_metadata(prompt_path, max_prompts=None):
 
 def is_target_complete(prompt_path, num_particles=4, save_individual_images=True):
     results_file = os.path.join(prompt_path, "results.json")
-    if not os.path.exists(results_file) or os.path.getsize(results_file) == 0:
-        return False
-    try:
-        with open(results_file, "r") as f:
-            data = json.load(f)
-            if "ImageReward" not in data:
-                return False
-    except Exception:
-        return False
-    if save_individual_images:
-        grid_file = os.path.join(prompt_path, "grid.png")
-        if not os.path.exists(grid_file) or os.path.getsize(grid_file) == 0:
-            return False
-        for idx in range(num_particles):
-            img_f = os.path.join(prompt_path, "samples", f"{idx:05}.png")
-            if not os.path.exists(img_f) or os.path.getsize(img_f) == 0:
-                return False
-        best_f = os.path.join(prompt_path, "best_of_n_samples", "00000.png")
-        if not os.path.exists(best_f) or os.path.getsize(best_f) == 0:
-            return False
-    return True
+    if os.path.exists(results_file) and os.path.getsize(results_file) > 0:
+        try:
+            with open(results_file, "r") as f:
+                data = json.load(f)
+                if "ImageReward" in data:
+                    return True
+        except Exception:
+            pass
+    return False
 
 
 def main(args):
@@ -81,21 +69,39 @@ def main(args):
         args.resample_t_end = args.num_inference_steps
 
     if args.use_smc:
-        assert args.resample_frequency > 0
-        assert args.num_particles > 1
-
-    # load prompt data # configure pipeline
-    prompt_data = load_geneval_metadata(args.prompt_path, max_prompts=args.max_prompt)
-
-
-    if "mhdang/dpo" in args.model_name and "xl" not in args.model_name:
-        pipe = FKDStableDiffusion.from_pretrained(
-            "runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16
+        pipe = FKDStableDiffusionSMC.from_pretrained(
+            args.model_name, torch_dtype=torch.float16
         )
-        # load finetuned model
-        unet_id = "mhdang/dpo-sd1.5-text2image-v1"
-        unet = UNet2DConditionModel.from_pretrained(
-            unet_id, subfolder="unet", torch_dtype=torch.float16
+    elif "runwayml/stable-diffusion-v1-5" in args.model_name and args.use_rag:
+        print("Using FKDStableDiffusionRAG")
+        pipe = FKDStableDiffusionRAG.from_pretrained(
+            args.model_name, torch_dtype=torch.float16
+        )
+    elif "sdxl_lightning_4step_lora.safetensors" in args.model_name and args.use_rag:
+        print("Using FKDStableDiffusionXLRAG")
+        pipe = FKDStableDiffusionXLRAG.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16
+        )
+        pipe.load_lora_weights(
+            hf_hub_download(
+                "ByteDance/SDXL-Lightning", "sdxl_lightning_4step_lora.safetensors"
+            )
+        )
+        pipe.fuse_lora()
+    elif "Hyper-SDXL-1step-Unet.safetensors" in args.model_name and args.use_rag:
+        print("Using FKDStableDiffusionXLRAG")
+        pipe = FKDStableDiffusionXLRAG.from_pretrained(
+            "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16
+        )
+        unet = UNet2DConditionModel.from_config(
+            pipe.unet.config,
+        ).to(torch.float16)
+        unet.load_state_dict(
+            load_file(
+                hf_hub_download(
+                    "ByteDance/Hyper-SD", "Hyper-SDXL-1step-Unet.safetensors"
+                )
+            )
         )
         pipe.unet = unet
     elif "stabilityai/stable-diffusion-xl-base-1.0" in args.model_name:
@@ -118,9 +124,13 @@ def main(args):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     pipe = pipe.to(device)
 
-    # set output directory
+    # set output directory (Tự động phát hiện thư mục đã có sẵn bất kể có timestamp hay không)
     prefix = f"{args.num_inference_steps}_{args.eta}_{args.num_particles}_{args.top_k}_{args.resample_t_end}_{args.lmbda}_{args.scale}_{args.seed}"
-    output_dir = os.path.join(args.output_dir, f"{prefix}")
+    existing_dirs = sorted(glob.glob(os.path.join(args.output_dir, f"{prefix}*")))
+    if existing_dirs:
+        output_dir = existing_dirs[-1]
+    else:
+        output_dir = os.path.join(args.output_dir, f"{prefix}")
 
     os.makedirs(output_dir, exist_ok=True)
 
