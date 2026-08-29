@@ -160,8 +160,9 @@ def main(args):
         if prompt_idx % args.num_splits != args.split_idx:
             continue
         prompt_path = os.path.join(output_dir, f"{prompt_idx:0>5}")
-        if is_target_complete(prompt_path, num_particles=args.num_particles, save_individual_images=args.save_individual_images):
+        if not args.overwrite and is_target_complete(prompt_path, num_particles=args.num_particles, save_individual_images=args.save_individual_images):
             continue
+
 
         prompt = [item["prompt"]] * args.num_particles
         os.makedirs(prompt_path, exist_ok=True)
@@ -327,8 +328,10 @@ def get_args():
     parser.add_argument("--FK_resample_t_end", type=int, default=80)
     parser.add_argument("--num_splits", type=int, default=1, help="Total number of parallel GPU splits")
     parser.add_argument("--split_idx", type=int, default=0, help="Index of current GPU split (0 to num_splits-1)")
+    parser.add_argument("--overwrite", action="store_true", help="Force regenerate and overwrite existing samples instead of skipping")
 
     args = parser.parse_args()
+
 
 
     return args
