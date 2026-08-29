@@ -638,8 +638,13 @@ class FKDStableDiffusion(
 
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             if fkd_args is not None and fkd_args["use_rag"]:
-                subset = fkd_args['rag_dataset'].data[prompt_idx]
+                rag_data = fkd_args['rag_dataset'].data
+                if isinstance(rag_data, dict):
+                    subset = rag_data.get(prompt_idx, next(iter(rag_data.values())) if rag_data else None)
+                else:
+                    subset = rag_data[prompt_idx]
                 subset = collate_like_dataloader([subset])
+
 
             for i, t in enumerate(timesteps):
                 if self.interrupt:

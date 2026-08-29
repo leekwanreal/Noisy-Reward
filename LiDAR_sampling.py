@@ -1,26 +1,23 @@
 import sys
-sys.path.append("fkd_diffusers")
-import compat_patch
-
-# primary generation script
 import os
+import glob
 import json
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
-
 import matplotlib.pyplot as plt
-
 import argparse
-
 from datetime import datetime
 
+sys.path.append("fkd_diffusers")
+import compat_patch
+
+# primary generation script
 import torch
 from diffusers import DDIMScheduler, UNet2DConditionModel
 
 from fkd_diffusers.fkd_pipeline_sdxl import FKDStableDiffusionXL
 from fkd_diffusers.fkd_pipeline_sd import FKDStableDiffusion
-
 
 from fks_utils import do_eval
 from lookahead_datasets import gen_lookahead_samples
@@ -51,10 +48,17 @@ def is_target_complete(prompt_path, num_particles=4, save_individual_images=True
     if os.path.exists(results_file) and os.path.getsize(results_file) > 0:
         return True
     p_name = os.path.basename(prompt_path)
-    for alt_res in glob.glob(f"/kaggle/input/**/Target_samples/*/{p_name}/results.json", recursive=True):
-        if os.path.exists(alt_res) and os.path.getsize(alt_res) > 0:
-            return True
+    search_patterns = [
+        f"/kaggle/input/**/Target_samples/*/{p_name}/results.json",
+        f"/content/drive/MyDrive/**/Target_samples/*/{p_name}/results.json",
+        f"../**/Target_samples/*/{p_name}/results.json",
+    ]
+    for pat in search_patterns:
+        for alt_res in glob.glob(pat, recursive=True):
+            if os.path.exists(alt_res) and os.path.getsize(alt_res) > 0:
+                return True
     return False
+
 
 
 def main(args):

@@ -88,6 +88,8 @@ Toàn bộ 3 bài test được tách riêng thành script độc lập [`test_l
 | **5** | `RuntimeError: Input type (c10::Half) and bias type (float) should be the same` tại `vae.decode()` | Pipeline SD nạp ở `float16` nhưng VAE lại được nạp độc lập ở `float32`. | Đồng bộ sử dụng trực tiếp `vae = pipe.vae` và viết hàm `decode_latents(latents, vae, pipe)` tự động ép kiểu và chia batch (chunk) an toàn. |
 | **6** | Pha 2 bị sinh lại từ đầu dù dữ liệu cũ đã có | Mã nguồn gốc LiDAR gắn thêm đuôi giờ ngẫu nhiên `_{cur_time}` vào tên thư mục, làm tạo thư mục mới mỗi lần chạy. | Cố định tên thư mục `Target_samples/50_1.0_4_50_200_5000_12.5_100` và bổ sung quét tiền tố linh hoạt. |
 | **7** | Bấm Run All trong phiên mới bị chạy lại | Dữ liệu phiên trước nằm trong `/kaggle/input/`, hàm kiểm tra cũ chỉ nhìn `/kaggle/working/`. | Thêm cơ chế 2 lớp: Đồng bộ toàn bộ dữ liệu từ Input sang Working ở Step 1 + Bổ sung Fallback quét trực tiếp từ `/kaggle/input/`. |
+| **8** | `AttributeError: 'ImageReward' object has no attribute 'score_batched'` tại `test_lidar_vs_smoothed_surrogate.py` | Hàm `RM.load()` nạp class gốc `ImageReward` (chỉ có `.score()`), thiếu method xử lý batch `score_batched` có trong wrapper `IRSMC`. | Chuyển sang `rm_load` từ `image_reward_utils` và bổ sung monkeypatch fallback `_universal_score_batched` trực tiếp trong `compat_patch.py`. |
+
 
 ---
 

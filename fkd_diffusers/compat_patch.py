@@ -195,4 +195,54 @@ def apply_compat_patches():
     except Exception:
         pass
 
+    # 6. Universal score_batched fallback patch for ImageReward model classes
+    def _universal_score_batched(self, prompts, images):
+        assert isinstance(prompts, list)
+        assert isinstance(images, list)
+        if hasattr(self, "blip") and hasattr(self, "mlp") and hasattr(self, "preprocess"):
+            dev = getattr(self, "device", None)
+            if dev is None:
+                try:
+                    dev = next(self.parameters()).device
+                except Exception:
+                    dev = "cuda" if torch.cuda.is_available() else "cpu"
+            text_input = self.blip.tokenizer(
+                prompts,
+                padding='max_length',
+                truncation=True,
+                max_length=35,
+                return_tensors="pt",
+            ).to(dev)
+            images_tensor = [
+                self.preprocess(image).unsqueeze(0).to(dev) for image in images
+            ]
+            images_tensor = torch.cat(images_tensor, 0).to(dev)
+            image_embeds = self.blip.visual_encoder(images_tensor)
+            image_atts = torch.ones(image_embeds.size()[:-1], dtype=torch.long).to(dev)
+            text_output = self.blip.text_encoder(
+                text_input.input_ids,
+                attention_mask=text_input.attention_mask,
+                encoder_hidden_states=image_embeds,
+                encoder_attention_mask=image_atts,
+                return_dict=True,
+            )
+            txt_features = text_output.last_hidden_state[:, 0, :].float()
+            rewards = self.mlp(txt_features)
+            mean = getattr(self, "mean", 0.16717362830052426)
+            std = getattr(self, "std", 1.0333394966054072)
+            rewards = (rewards - mean) / std
+            return rewards.view(txt_features.shape[0]).detach().cpu().numpy().tolist()
+        else:
+            return [float(self.score(p, img)) for p, img in zip(prompts, images)]
+
+    try:
+        import ImageReward
+        import ImageReward.models.ImageReward as ir_module
+        if hasattr(ir_module, "ImageReward"):
+            if not hasattr(ir_module.ImageReward, "score_batched"):
+                ir_module.ImageReward.score_batched = _universal_score_batched
+    except Exception:
+        pass
+
 apply_compat_patches()
+

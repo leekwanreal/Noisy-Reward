@@ -42,32 +42,66 @@ def init_tokenizer():
     return tokenizer
 
 
+import glob
+
+
 class gen_lookahead_samples(Dataset):
     def __init__(self, directory, top_k):
         print("top_k:", top_k)
-        if os.path.isabs(directory) or os.path.exists(directory):
-            self.dataset_path = directory
-        else:
-            self.dataset_path = f"Lookahead_samples/{directory}"
-            
-        data = []
-        prompt_dirs = sorted([d for d in os.listdir(self.dataset_path) if os.path.isdir(os.path.join(self.dataset_path, d)) and d.isdigit()])
-        for d in prompt_dirs:
-            latent_path = f"{self.dataset_path}/{d}/samples/latent.pt"
-            if not os.path.exists(latent_path):
-                continue
-            latent = torch.load(latent_path, map_location="cpu")
-            with open(f"{self.dataset_path}/{d}/results.json", "r") as f:
-                label = json.load(f)
-            reward = label["ImageReward"]["result"]
-            prompt = label["prompt"]
+        
+        # Build candidate directories to scan
+        candidate_dirs = []
+        if os.path.exists(directory):
+            candidate_dirs.append(directory)
+        for cand in [
+            directory,
+            os.path.join("Lookahead_samples", directory),
+            f"/kaggle/working/LiDAR_Experiment/Lookahead_samples/{directory}",
+            f"/kaggle/working/Lookahead_samples/{directory}",
+            f"/content/drive/MyDrive/LiDAR_Experiment/Lookahead_samples/{directory}",
+            f"/content/LiDAR_Experiment/Lookahead_samples/{directory}",
+        ]:
+            if os.path.exists(cand) and cand not in candidate_dirs:
+                candidate_dirs.append(cand)
+                
+        # Also find any input directories matching Lookahead_samples
+        for cand in glob.glob(f"/kaggle/input/**/Lookahead_samples/{directory}", recursive=True):
+            if os.path.exists(cand) and cand not in candidate_dirs:
+                candidate_dirs.append(cand)
+        for cand in glob.glob(f"/kaggle/input/**/{directory}", recursive=True):
+            if os.path.exists(cand) and os.path.isdir(cand) and cand not in candidate_dirs:
+                candidate_dirs.append(cand)
 
-            random.seed(42)
-            k = min(top_k, len(latent))
-            indices = random.sample(range(len(latent)), k)
-            latents = [latent[i] for i in indices]
-            rewards = [reward[i] for i in indices]
-            prompts = [prompt[i] for i in indices]
-            datapoint = {"latents": torch.stack(latents), "rewards": torch.tensor(rewards), "prompts": prompts}
-            data.append(datapoint)
+        data = {}
+        for d_path in candidate_dirs:
+            if not os.path.exists(d_path) or not os.path.isdir(d_path):
+                continue
+            prompt_dirs = sorted([d for d in os.listdir(d_path) if os.path.isdir(os.path.join(d_path, d)) and d.isdigit()])
+            for d in prompt_dirs:
+                p_idx = int(d)
+                if p_idx in data:
+                    continue  # already loaded
+                latent_path = os.path.join(d_path, d, "samples", "latent.pt")
+                results_path = os.path.join(d_path, d, "results.json")
+                if not os.path.exists(latent_path) or not os.path.exists(results_path):
+                    continue
+                try:
+                    latent = torch.load(latent_path, map_location="cpu")
+                    with open(results_path, "r", encoding="utf-8") as f:
+                        label = json.load(f)
+                    reward = label["ImageReward"]["result"]
+                    prompt = label["prompt"]
+
+                    k = min(top_k, len(latent))
+                    latents = [latent[i] for i in range(k)]
+                    rewards = [reward[i] for i in range(k)]
+                    prompts = [prompt[i] for i in range(k)]
+                    datapoint = {"latents": torch.stack(latents), "rewards": torch.tensor(rewards), "prompts": prompts}
+                    data[p_idx] = datapoint
+                except Exception as e:
+                    print(f"Warning loading lookahead prompt {d} from {d_path}: {e}")
+                    
+        print(f"📦 Đã nạp thành công Lookahead samples cho {len(data)} prompts!")
         self.data = data
+
+

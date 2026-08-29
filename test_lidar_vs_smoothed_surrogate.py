@@ -32,9 +32,18 @@ from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 from diffusers import AutoencoderKL, DDIMScheduler, DPMSolverMultistepScheduler, StableDiffusionPipeline
-import ImageReward as RM
+
+try:
+    from fkd_diffusers.image_reward_utils import rm_load
+except ImportError:
+    try:
+        from image_reward_utils import rm_load
+    except ImportError:
+        import ImageReward as RM
+        rm_load = RM.load
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
+
 print(f"🚀 Thiết bị thực thi bài test: {device}")
 
 
@@ -437,7 +446,14 @@ if __name__ == "__main__":
     print("\n🚀 Khởi tạo Pipeline phục vụ chạy Bộ 3 Bài Test...")
     pipe = StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5", torch_dtype=torch.float16).to(device)
     vae = pipe.vae
-    ir_model = RM.load("ImageReward-v1.0").to(device)
+    try:
+        ir_model = rm_load("ImageReward-v1.0", device=device)
+    except TypeError:
+        ir_model = rm_load("ImageReward-v1.0").to(device)
+    except Exception as e:
+        import ImageReward as RM
+        ir_model = RM.load("ImageReward-v1.0").to(device)
+
 
     # Tải danh sách prompt từ file metadata (Mặc định tải toàn bộ 553 prompts nếu num_prompts=-1)
     test_prompts = load_geneval_prompts("prompt_files/geneval_metadata.jsonl", max_prompts=args.num_prompts)
