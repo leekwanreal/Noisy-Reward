@@ -29,31 +29,34 @@ giúp triệt tiêu hoàn toàn sự khuếch đại sai số, ổn định phâ
 
 ## 🔬 II. TOÀN BỘ CÁC THÍ NGHIỆM: ĐÃ CHẠY & SẼ CHẠY
 
-```mermaid
-graph TD
-    Root["🎯 TOÀN BỘ LỘ TRÌNH THỰC NGHIỆM"] --> PartA["📌 PHẦN A: TÁI LẬP BENCHMARK BÀI BÁO (Table 2 & 8)"]
-    Root --> PartB["🔬 PHẦN B: CHỨNG MINH ĐỘT PHÁ LÝ THUYẾT (Ours)"]
-    Root --> PartC["🖼️ PHẦN C: THỰC NGHIỆM ĐÁNH GIÁ ẢNH THÀNH PHẨM"]
-
-    subgraph PhaseA ["Phần A: Tái lập Benchmark LiDAR (SD v1.5 / GenEval 553 Prompts)"]
-        A1["【Pha 1】 Sinh 50 hạt Lookahead (DPM-5)<br>✅ ĐÃ HOÀN THÀNH 100%"] --> A2["【Pha 2】 Sinh ảnh Đích 50 bước (DDIM-50)<br>⏳ ĐANG THỰC THI (~2 Tiếng / 2x GPU)"]
-        A2 --> A3["【Step 4】 Chấm điểm Đối chứng Table 2 & Table 8<br>(ImageReward Mean & Best-of-4, CLIP, HPS v2.1)"]
-        A3 --> A4["【Step 5】 Đóng gói ZIP & Xuất Link Tải 1-Click"]
-    end
-
-    subgraph PhaseB ["Phần B: Bộ 3 Bài Test Lipschitz (The 3 Golden Tests)"]
-        B1["【Test 1】 Đo Sai số Bộ giải & Lipschitz Theorem 1<br>(Tương quan Kendall Tau: LiDAR 0.2 vs Ours 0.88)"]
-        B2["【Test 2】 Đo Sụp đổ Softmax Entropy<br>(Chống Winner-Takes-All: Duy trì H(w) > 2.5)"]
-        B3["【Test 3】 Đo Độ Trơn Trường Vector Dẫn đường<br>(Ổn định Cosine Similarity: 0.95 vs 0.55)"]
-    end
-
-    subgraph PhaseC ["Phần C: So Sánh Trực Quan Chất Lượng Ảnh"]
-        C1["【Pha 3】 Sinh ảnh Smoothed Surrogate LiDAR<br>(σ ∈ {0.02, 0.05, 0.10} vs Baseline LiDAR σ=0)"]
-    end
-
-    PartA --> PhaseA
-    PartB --> PhaseB
-    PartC --> PhaseC
+```text
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   🎯 TOÀN BỘ LỘ TRÌNH THỰC NGHIỆM                                 │
+└─────────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                  │
+         ┌────────────────────────────────────────┴────────────────────────────────────────┐
+         ▼                                                                                 ▼
+┌─────────────────────────────────────────────────┐               ┌─────────────────────────────────────────────────┐
+│  📌 PHẦN A: TÁI LẬP BENCHMARK BÀI BÁO GỐC       │               │  🔬 PHẦN B: CHỨNG MINH ĐỘT PHÁ LÝ THUYẾT (OURS) │
+│     (LiDAR DPM-5 / n=50 trên 553 GenEval)       │               │     (Smoothed Surrogate & Chặn Lipschitz)       │
+└────────────────────────┬────────────────────────┘               └────────────────────────┬────────────────────────┘
+                         │                                                                 │
+         ┌───────────────┴───────────────┐                         ┌───────────────────────┼───────────────────────┐
+         ▼                               ▼                         ▼                       ▼                       ▼
+┌─────────────────┐             ┌─────────────────┐       ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ 【Pha 1】       │             │ 【Pha 2】       │       │ 【Bài Test 1】  │     │ 【Bài Test 2】  │     │ 【Bài Test 3】  │
+│ Sinh 50 hạt     │  ───────►   │ Sinh ảnh Đích   │       │ Đo Sai số Solver│     │ Đo Sụp đổ       │     │ Đo Độ Trơn      │
+│ Lookahead 5 bước│             │ DDIM 50 bước    │       │ & Lipschitz     │     │ Entropy H(w)    │     │ Trường Vector   │
+│                 │             │                 │       │                 │     │                 │     │                 │
+│ [ĐÃ XONG 100%]  │             │ [ĐANG CHẠY ~2h] │       │ [~20 Phút]      │     │ [~1 Phút]       │     │ [~2 Phút]       │
+└─────────────────┘             └────────┬────────┘       └─────────────────┘     └─────────────────┘     └─────────────────┘
+                                         │
+                                         ▼
+                                ┌─────────────────┐
+                                │ 【Step 4 & 5】  │
+                                │ Chấm điểm Bảng 2│
+                                │ & Đóng gói ZIP  │
+                                └─────────────────┘
 ```
 
 
