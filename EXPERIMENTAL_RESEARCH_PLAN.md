@@ -27,37 +27,27 @@ giúp triệt tiêu hoàn toàn sự khuếch đại sai số, ổn định phâ
 
 ---
 
-## 🔬 II. TOÀN BỘ CÁC THÍ NGHIỆM: ĐÃ CHẠY & SẼ CHẠY
+## 🔬 II. TỔNG QUAN CÁC TRỤ CỘT THỰC NGHIỆM
 
-```text
-┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   🎯 TOÀN BỘ LỘ TRÌNH THỰC NGHIỆM                                 │
-└─────────────────────────────────────────────────┬─────────────────────────────────────────────────┘
-                                                  │
-         ┌────────────────────────────────────────┴────────────────────────────────────────┐
-         ▼                                                                                 ▼
-┌─────────────────────────────────────────────────┐               ┌─────────────────────────────────────────────────┐
-│  📌 PHẦN A: TÁI LẬP BENCHMARK BÀI BÁO GỐC       │               │  🔬 PHẦN B: CHỨNG MINH ĐỘT PHÁ LÝ THUYẾT (OURS) │
-│     (LiDAR DPM-5 / n=50 trên 553 GenEval)       │               │     (Smoothed Surrogate & Chặn Lipschitz)       │
-└────────────────────────┬────────────────────────┘               └────────────────────────┬────────────────────────┘
-                         │                                                                 │
-         ┌───────────────┴───────────────┐                         ┌───────────────────────┼───────────────────────┐
-         ▼                               ▼                         ▼                       ▼                       ▼
-┌─────────────────┐             ┌─────────────────┐       ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ 【Pha 1】       │             │ 【Pha 2】       │       │ 【Bài Test 1】  │     │ 【Bài Test 2】  │     │ 【Bài Test 3】  │
-│ Sinh 50 hạt     │  ───────►   │ Sinh ảnh Đích   │       │ Đo Sai số Solver│     │ Đo Sụp đổ       │     │ Đo Độ Trơn      │
-│ Lookahead 5 bước│             │ DDIM 50 bước    │       │ & Lipschitz     │     │ Entropy H(w)    │     │ Trường Vector   │
-│                 │             │                 │       │                 │     │                 │     │                 │
-│ [ĐÃ XONG 100%]  │             │ [ĐANG CHẠY ~2h] │       │ [~20 Phút]      │     │ [~1 Phút]       │     │ [~2 Phút]       │
-└─────────────────┘             └────────┬────────┘       └─────────────────┘     └─────────────────┘     └─────────────────┘
-                                         │
-                                         ▼
-                                ┌─────────────────┐
-                                │ 【Step 4 & 5】  │
-                                │ Chấm điểm Bảng 2│
-                                │ & Đóng gói ZIP  │
-                                └─────────────────┘
-```
+Hệ thống thực nghiệm được chia thành 3 phần chính bổ trợ lẫn nhau:
+
+### 1. 📌 Phần A: Tái Lập Toàn Diện Benchmark Bài Báo Gốc (Table 2 & Table 8)
+* **Pha 1 — Lookahead Sampling:** Sinh 50 hạt ước lượng nhanh 5 bước DPM-Solver cho 553 GenEval prompts $\rightarrow$ **`[ĐÃ HOÀN THÀNH 100%]`**.
+* **Pha 2 — Target LiDAR Sampling:** Sinh ảnh đích chính thức 50 bước DDIM trên 2x GPU T4 $\rightarrow$ **`[ĐANG THỰC THI ~2h]`**.
+* **Step 4 & 5 — Đánh giá & Đóng gói:** Chấm điểm ImageReward, CLIP, HPS v2.1 đối chứng Table 2 & 8, xuất file `verification_report.json` và file ZIP.
+
+---
+
+### 2. 🔬 Phần B: Bộ 3 Bài Test Chứng Minh Đột Phá Lý Thuyết (The 3 Golden Tests)
+* **Bài Test 1 — Đo Sai số Bộ giải & Hệ số Lipschitz (Theorem 1 Proof):** So sánh $\hat{L}$ và tương quan thứ hạng Kendall's $\tau$ giữa LiDAR ($\tau \approx 0.2$) vs Smoothed Surrogate ($\tau \ge 0.85$) $\rightarrow$ **`[SẮP CHẠY ~20 phút]`**.
+* **Bài Test 2 — Đo Sụp đổ Softmax Entropy (Winner-Takes-All Analysis):** Đo Shannon Entropy $H(w)$ và Perplexity chứng minh duy trì tính đa dạng hạt $\rightarrow$ **`[SẮP CHẠY ~1 phút]`**.
+* **Bài Test 3 — Đo Độ Trơn Trường Vector Dẫn đường (Guidance Stability):** Đo Cosine Similarity ổn định hướng dẫn đường $\mathbf{g}_t$ ($\ge 0.95$) $\rightarrow$ **`[SẮP CHẠY ~2 phút]`**.
+
+---
+
+### 3. 🖼️ Phần C: Thực Nghiệm Đánh Giá Chất Lượng Ảnh Thành Phẩm
+* **Pha 3 — Sinh ảnh Smoothed Surrogate LiDAR:** Đo chất lượng sinh ảnh với các mức làm mượt $\sigma \in \{0.02, 0.05, 0.10\}$ so với Baseline LiDAR gốc ($\sigma = 0$).
+
 
 
 ---
